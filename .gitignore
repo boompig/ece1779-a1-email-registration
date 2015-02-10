@@ -1,0 +1,4 @@
+*.txt
+*.db
+credentials.py
+*.pyc

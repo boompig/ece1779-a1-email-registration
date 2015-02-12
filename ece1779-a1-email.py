@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+import coloredlogs
 import cStringIO
 import json
+import logging
 import re
 import subprocess
 import string
@@ -12,6 +14,14 @@ import datastore
 import sendmail
 
 UNDEF_GROUP = "undefined"
+SLEEP_TIME = 60
+
+########## setup logger ##############
+logger = logging.getLogger("ece1779-a1-email")
+coloredlogs.install(show_hostname=False)
+######################################
+
+
 
 def read_group_ids(fname, used_fname):
     pattern = "CREATE USER 'group(\d+)' IDENTIFIED BY '(\d+)';"
@@ -85,6 +95,8 @@ def extract_group_info(text, num_members):
         m['email'] = line.strip()
         if m['email'].endswith("?"):
             m['email'] = m['email'][:-1]
+        if "<" in m['email']:
+            m['email'] = m['email'].split("<")[0]
         assert m['email'] != "", "email for group member %d must not be blank" % (i + 1)
         group.append(m)
     return group
@@ -96,7 +108,7 @@ def read_submitted_ids(fname):
 
 def read_email(email_text):
     obj = {}
-    email_text = string.translate(email_text, None, "[]?*(),!<>&^%%$#+=/\\|{}~`:;'\"_")
+    email_text = string.translate(email_text, None, "[]?*(),!&^%%$#+=/\\|{}~`:;'\"_")
     print "Message:\n%s\n------------------" % email_text
     obj['group_num'], text = seek_to_group(email_text)
     obj['num_members'] = extract_num_members(text)
@@ -170,15 +182,19 @@ def main(content, author, message_id):
         datastore.get_next_data(obj)
         emails = respond_to_email(obj)
         print "[main] Successfully processed email"
-        print json.dumps(obj)
+        print json.dumps(obj, indent=4)
         confirm = raw_input("ok to send? ")
         if confirm == "y":
             datastore.save_group_info(obj)
             for addr, email in emails.iteritems():
                 print addr
                 print email
+                sendmail.send_mail(addr, "RE: ECE1779 A1 Registration", email)
+            try:
                 datastore.save_respond_msg(message_id, False)
-            sendmail.send_mail(addr, "RE: ECE1779 A1 Registration", email)
+            except sqlite3.IntegrityError:
+                #whatevs
+                pass
         else:
             confirm = raw_input("Ignore message? ")
             if confirm == "y":
@@ -189,9 +205,12 @@ def main(content, author, message_id):
                     #whatevs
                     pass
             else:
-                print "abort"
+                logger.info("abort")
     except AssertionError as e:
         print "Error: %s" % e
+        print "Message was:"
+        print content
+        print "-" * 30
         confirm = raw_input("OK to send error message to %s? " % author)
         if confirm == "y":
             content = """
@@ -209,21 +228,35 @@ def main(content, author, message_id):
         else:
             confirm = raw_input("Ignore message? ")
             if confirm == "y":
-                print "saving"
+                logger.info("saving")
                 datastore.save_respond_msg(message_id, True)
             else:
-                print "aborting"
+                logger.info("aborting")
                 return
 
-if __name__ == "__main__":
+def check_mail_loop():
     while True:
         last_message_id = datastore.last_message_id()
         new_mail_content_list = sendmail.get_new_mail(last_message_id)
         if new_mail_content_list != []:
             subprocess.call(["say", "you have new mail from students"])
         else:
-            print "[main] no new mail"
+            logger.info("no new mail")
         for email in new_mail_content_list:
-            print "new mail from %s!" % email['from']
+            logger.info("new mail from %s!" % email['from'])
             main(email['message'], email['from'], email['id'])
-        sleep(60)
+        logger.info("going to sleep for %d seconds", SLEEP_TIME)
+        sleep(SLEEP_TIME)
+
+if __name__ == "__main__":
+    #logger.basicConfig(
+        #level=logger.INFO,
+        #format="[%(module)s.%(funcName)s] %(message)s"
+    #)
+
+    if len(sys.argv) > 1:
+        with open (sys.argv[1]) as fp:
+            content = fp.read()
+            main(content, "dbkats@gmail.com", 1)
+    else:
+        check_mail_loop()

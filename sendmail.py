@@ -3,6 +3,7 @@ import datetime
 import email
 import json
 import imaplib
+import logging
 import re
 import smtplib
 
@@ -12,6 +13,8 @@ fromaddr = "dbkats@cs.toronto.edu"
 username = "dbkats@gmail.com"
 # app-specific password
 password = GMAIL_PASSWORD
+
+logger = logging.getLogger("ece1779-a1-email.sendmail")
 
 def strip_html(msg):
     buf = StringIO(msg)
@@ -45,9 +48,9 @@ def get_new_mail(last_message_id):
     M.select("ECE1779 A1 Registration")
     rv, data = M.search(None, "ALL")
     if rv != "OK":
-        print "[sendmail.get_new_mail] no messages"
+        logger.info("no messages")
         return []
-    print "[sendmail.get_new_mail] fetched messages, checking for new emails from students..."
+    logger.info("fetched messages, checking for new emails from students...")
     #now = datetime.datetime.now()
     msg_list = []
     for num in data[0].split():
@@ -57,9 +60,8 @@ def get_new_mail(last_message_id):
         timestamp = datetime.datetime.fromtimestamp(
             email.utils.mktime_tz(date_tuple))
         if int(num) > last_message_id:
-            #print repr(num)
             if msg['Subject'] != "ECE1779 A1 Registration":
-                print "[sendmail.get_new_mail] ignoring email with bad subject: %s" % msg['Subject']
+                logger.info("ignoring email with bad subject: %s" % msg['Subject'])
                 last_message_id = int(num)
                 continue
             obj = {
@@ -94,7 +96,7 @@ def send_mail(toaddr, subject, content):
     server.login(username, password)
     server.sendmail(fromaddr, toaddr, msg)
     server.quit()
-    print "[send_mail] Email to %s sent successfully" % toaddr
+    logger.info("Email to %s sent successfully" % toaddr)
     return True
 
 if __name__ == "__main__":

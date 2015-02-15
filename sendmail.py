@@ -59,24 +59,31 @@ def get_new_mail(last_message_id):
         date_tuple = email.utils.parsedate_tz(msg['Date'])
         timestamp = datetime.datetime.fromtimestamp(
             email.utils.mktime_tz(date_tuple))
-        if int(num) > last_message_id:
-            if msg['Subject'] != "ECE1779 A1 Registration":
-                logger.info("ignoring email with bad subject: %s" % msg['Subject'])
-                last_message_id = int(num)
-                continue
-            obj = {
-                "from": email.utils.parseaddr(msg['From'])[1],
-                "message": msg.get_payload(),
-                "id": num
-            }
 
-            if type(obj["message"]) == list:
-                msg_text = "\n".join([item.get_payload() for item in obj["message"]])
-                msg_text = strip_html(msg_text)
-                obj["message"] = msg_text
-            msg_list.append(obj)
-            # update last message ID
+
+        #if int(num) > last_message_id:
+        #if msg['Subject'] != "ECE1779 A1 Registration":
+            #logger.info("ignoring email with bad subject: %s" % msg['Subject'])
+            #last_message_id = int(num)
+            #continue
+        from_email = email.utils.parseaddr(msg['From'])[1]
+        if from_email in ["dbkats@gmail.com", "dbkats@cs.toronto.edu"]:
             last_message_id = int(num)
+            logger.debug("Ignoring email from myself with ID %d", last_message_id)
+            continue
+        obj = {
+            "from": from_email,
+            "message": msg.get_payload(),
+            "id": int(num)
+        }
+
+        if type(obj["message"]) == list:
+            msg_text = "\n".join([item.get_payload() for item in obj["message"]])
+            msg_text = strip_html(msg_text)
+            obj["message"] = msg_text
+        msg_list.append(obj)
+        # update last message ID
+        last_message_id = int(num)
     M.close()
     #write_last_message_id()
     return msg_list

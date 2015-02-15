@@ -6,6 +6,7 @@ import logging
 import re
 import subprocess
 import string
+import sqlite3
 import sys
 from time import sleep
 
@@ -18,7 +19,7 @@ SLEEP_TIME = 60
 
 ########## setup logger ##############
 logger = logging.getLogger("ece1779-a1-email")
-coloredlogs.install(show_hostname=False)
+coloredlogs.install(show_timestamps=False, show_hostname=False)
 ######################################
 
 
@@ -176,10 +177,35 @@ Daniel Kats's auto-mailing bot
         emails[student['email']] = email_content
     return emails
 
+def confirm_save_respond(message_id, is_error):
+    confirm = raw_input("Save responded in database? ")
+    if confirm == "y":
+        logger.info("saving...")
+        try:
+            datastore.save_respond_msg(message_id, is_error)
+            logger.info("saved")
+        except sqlite3.IntegrityError:
+            logger.error("saving failed, ID already exists")
+    else:
+        logger.info("not saving")
+
+
 def main(content, author, message_id):
     try:
         obj = read_email(content)
-        datastore.get_next_data(obj)
+        assert datastore.get_next_data(obj), "There are no more group logins in the database"
+
+        flag = True
+        for student in obj['students']:
+            if datastore.student_exists(student['student_num']):
+                logger.info("Already registered student # %s" % student['student_num'])
+            else:
+                flag = False
+        if flag:
+            logger.info("All students in email already registered, returning")
+            confirm_save_respond(message_id, False)
+            return
+
         emails = respond_to_email(obj)
         print "[main] Successfully processed email"
         print json.dumps(obj, indent=4)
@@ -196,65 +222,56 @@ def main(content, author, message_id):
                 #whatevs
                 pass
         else:
-            confirm = raw_input("Ignore message? ")
-            if confirm == "y":
-                print "saving"
-                try:
-                    datastore.save_respond_msg(message_id, False)
-                except sqlite3.IntegrityError:
-                    #whatevs
-                    pass
-            else:
-                logger.info("abort")
+            confirm_save_respond(message_id, is_error)
     except AssertionError as e:
-        print "Error: %s" % e
+        response_content = """
+Dear student,
+There is an error somewhere in your email. When parsing, got the following error:
+    Error: %(error)s
+
+Please correct this and send another email. See http://www.cs.toronto.edu/~dbkats/#ece1779-a1 for reference.
+
+Good luck!
+Sincerely,
+Daniel Kats's auto-mailing bot""" % ({"error": str(e)})
+        logger.error( "Error: %s" % e )
         print "Message was:"
         print content
         print "-" * 30
+        print "Response will be:"
+        print response_content
         confirm = raw_input("OK to send error message to %s? " % author)
         if confirm == "y":
-            content = """
-    Dear student,
-    There is an error somewhere in your email. When parsing, got the following error:
-        Error: %(error)s
-
-    Please correct this and send another email. See http://www.cs.toronto.edu/~dbkats/#ece1779-a1 for reference.
-
-    Good luck!
-    Sincerely,
-    Daniel Kats's auto-mailing bot""" % ({"error": str(e)})
-            datastore.save_respond_msg(message_id, True)
-            sendmail.send_mail(author, "RE: ECE1779 A1 Registration", content)
+            sendmail.send_mail(author, "RE: ECE1779 A1 Registration", response_content)
+            confirm_save_respond(message_id, True)
         else:
-            confirm = raw_input("Ignore message? ")
-            if confirm == "y":
-                logger.info("saving")
-                datastore.save_respond_msg(message_id, True)
-            else:
-                logger.info("aborting")
-                return
+            confirm_save_respond(message_id, True)
 
 def check_mail_loop():
     while True:
         last_message_id = datastore.last_message_id()
         new_mail_content_list = sendmail.get_new_mail(last_message_id)
-        if new_mail_content_list != []:
+        action_items = []
+        for email in new_mail_content_list:
+            if datastore.message_exists(email['id']):
+                logger.debug("Already responded to email with ID %d", email['id'])
+            else:
+                action_items.append(email)
+
+        if len(action_items) > 0:
             subprocess.call(["say", "you have new mail from students"])
         else:
             logger.info("no new mail")
-        for email in new_mail_content_list:
-            logger.info("new mail from %s!" % email['from'])
+
+        for email in action_items:
+            logger.info("new mail from %s with ID %d!" % (email['from'], email['id']))
             main(email['message'], email['from'], email['id'])
         logger.info("going to sleep for %d seconds", SLEEP_TIME)
         sleep(SLEEP_TIME)
 
 if __name__ == "__main__":
-    #logger.basicConfig(
-        #level=logger.INFO,
-        #format="[%(module)s.%(funcName)s] %(message)s"
-    #)
-
     if len(sys.argv) > 1:
+        logger.debug("Trying to read email from file %s", sys.argv[1])
         with open (sys.argv[1]) as fp:
             content = fp.read()
             main(content, "dbkats@gmail.com", 1)

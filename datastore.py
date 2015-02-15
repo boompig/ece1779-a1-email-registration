@@ -37,9 +37,9 @@ def load_existing_data_amazon():
     conn.commit()
     conn.close()
 
-def load_existing_data_groups():
+def load_existing_data_groups(fname):
     l = []
-    with open("groups.txt") as fp:
+    with open(fname) as fp:
         for line in fp:
             m = re.match("CREATE USER '(group(\d+))' IDENTIFIED BY '(.*?)'", line)
             group_num = m.group(2)
@@ -96,7 +96,11 @@ def get_next_data(group_info):
     conn = db_connect()
     cur = conn.cursor()
     cur.execute("SELECT MAX(group_num) FROM groups WHERE in_use=0")
-    next_group = int(cur.fetchone()[0])
+    try:
+        next_group = int(cur.fetchone()[0])
+    except TypeError:
+        # no next ID
+        return False
     group_info['group_num'] = next_group
     cur.execute("SELECT username, password FROM groups WHERE group_num=?", [next_group])
     next_login = cur.fetchone()
@@ -139,6 +143,24 @@ def import_data_groups():
     conn.close()
 
 
+def message_exists(message_id):
+    conn = db_connect()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM messages WHERE message_id=?", [message_id])
+    rows = cur.fetchall()
+    result = len(rows) > 0
+    conn.close()
+    return result
+
+def student_exists(student_num):
+    conn = db_connect()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM students WHERE student_num=?", [student_num])
+    rows = cur.fetchall()
+    result = len(rows) > 0
+    conn.close()
+    return result
+
 def db_clear():
     conn = db_connect()
     cur = conn.cursor()
@@ -149,19 +171,4 @@ def db_clear():
     conn.close()
 
 if __name__ == "__main__":
-    db_init()
-    db_clear()
-    import_data_amazon()
-    import_data_groups()
-    group_info = {
-        "num_members": 2,
-        "students": [
-            {"student_num": 997492468},
-            {"student_num": 1007007007}
-        ]
-    }
-
-    get_next_data(group_info)
-
-    print json.dumps(group_info, indent=4)
-    #save_group_info(group_info)
+    load_existing_data_groups("more_groups.txt")

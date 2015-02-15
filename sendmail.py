@@ -1,10 +1,8 @@
 from cStringIO import StringIO
-import datetime
 import email
 import json
 import imaplib
 import logging
-import re
 import smtplib
 
 from credentials import GMAIL_PASSWORD
@@ -51,21 +49,10 @@ def get_new_mail(last_message_id):
         logger.info("no messages")
         return []
     logger.info("fetched messages, checking for new emails from students...")
-    #now = datetime.datetime.now()
     msg_list = []
     for num in data[0].split():
         rv, data = M.fetch(num, "(RFC822)")
         msg = email.message_from_string(data[0][1])
-        date_tuple = email.utils.parsedate_tz(msg['Date'])
-        timestamp = datetime.datetime.fromtimestamp(
-            email.utils.mktime_tz(date_tuple))
-
-
-        #if int(num) > last_message_id:
-        #if msg['Subject'] != "ECE1779 A1 Registration":
-            #logger.info("ignoring email with bad subject: %s" % msg['Subject'])
-            #last_message_id = int(num)
-            #continue
         from_email = email.utils.parseaddr(msg['From'])[1]
         if from_email in ["dbkats@gmail.com", "dbkats@cs.toronto.edu"]:
             last_message_id = int(num)

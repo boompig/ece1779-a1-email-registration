@@ -222,7 +222,8 @@ def main(content, author, message_id):
                 #whatevs
                 pass
         else:
-            confirm_save_respond(message_id, is_error)
+            logging.info("email not sent")
+            confirm_save_respond(message_id, False)
     except AssertionError as e:
         response_content = """
 Dear student,
